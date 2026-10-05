@@ -57,6 +57,11 @@ const UpdateBudgetPayloadSchema = z.object({
   newBudget: z.number().min(50).max(1000000),
 });
 
+const UpdateActivityPayloadSchema = z.object({ activityId: z.string().min(1), changes: z.record(z.string(), z.unknown()).default({}) });
+const AddDayPayloadSchema = z.object({ dayNumber: z.number().int().positive().optional(), date: z.string().optional(), city: z.string().max(120).optional() });
+const RemoveDayPayloadSchema = z.object({ dayId: z.string().min(1) });
+const OptimizeDayPayloadSchema = z.object({ dayId: z.string().min(1) });
+
 export const StructuredAIResponseSchema = z.object({
   message: z.string().min(1),
   action: AIActionTypeEnum.default('NONE'),
@@ -122,8 +127,11 @@ export class AIActionValidator {
         return { valid: true, cleanPayload: parsed };
       }
 
-      // Default fallback for other action types
-      return { valid: true, cleanPayload: payload };
+      if (action === 'UPDATE_ACTIVITY') return { valid: true, cleanPayload: UpdateActivityPayloadSchema.parse(payload) };
+      if (action === 'ADD_DAY') return { valid: true, cleanPayload: AddDayPayloadSchema.parse(payload) };
+      if (action === 'REMOVE_DAY') return { valid: true, cleanPayload: RemoveDayPayloadSchema.parse(payload) };
+      if (action === 'OPTIMIZE_DAY') return { valid: true, cleanPayload: OptimizeDayPayloadSchema.parse(payload) };
+      return { valid: false, error: 'Acción no soportada por el validador.' };
     } catch (err: any) {
       return {
         valid: false,
