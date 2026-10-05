@@ -299,21 +299,17 @@ export class SupabaseStorageService implements IStorageService {
 
       // Reconcile: delete removed activities for this day
       if (currentActIds.length > 0) {
-        await supabase
-          .from('activities')
-          .delete()
-          .eq('trip_day_id', actualDayId)
-          .not('id', 'in', `(${currentActIds.join(',')})`);
+        await supabase.from('activities').delete().eq('trip_day_id', actualDayId).not('id', 'in', `(${currentActIds.join(',')})`);
+      } else {
+        await supabase.from('activities').delete().eq('trip_day_id', actualDayId);
       }
     }
 
     // Delete removed days
     if (savedDayIds.length > 0) {
-      await supabase
-        .from('trip_days')
-        .delete()
-        .eq('trip_id', actualTripId)
-        .not('id', 'in', `(${savedDayIds.join(',')})`);
+      await supabase.from('trip_days').delete().eq('trip_id', actualTripId).not('id', 'in', `(${savedDayIds.join(',')})`);
+    } else {
+      await supabase.from('trip_days').delete().eq('trip_id', actualTripId);
     }
 
     // 4. Synchronize Expenses
@@ -347,11 +343,9 @@ export class SupabaseStorageService implements IStorageService {
     }
 
     if (currentExpIds.length > 0) {
-      await supabase
-        .from('expenses')
-        .delete()
-        .eq('trip_id', actualTripId)
-        .not('id', 'in', `(${currentExpIds.join(',')})`);
+      await supabase.from('expenses').delete().eq('trip_id', actualTripId).not('id', 'in', `(${currentExpIds.join(',')})`);
+    } else {
+      await supabase.from('expenses').delete().eq('trip_id', actualTripId);
     }
 
     // 5. Synchronize Checklist
@@ -385,11 +379,9 @@ export class SupabaseStorageService implements IStorageService {
     }
 
     if (currentChkIds.length > 0) {
-      await supabase
-        .from('checklist_items')
-        .delete()
-        .eq('trip_id', actualTripId)
-        .not('id', 'in', `(${currentChkIds.join(',')})`);
+      await supabase.from('checklist_items').delete().eq('trip_id', actualTripId).not('id', 'in', `(${currentChkIds.join(',')})`);
+    } else {
+      await supabase.from('checklist_items').delete().eq('trip_id', actualTripId);
     }
 
     // 6. Synchronize Memories
@@ -423,11 +415,9 @@ export class SupabaseStorageService implements IStorageService {
     }
 
     if (currentMemIds.length > 0) {
-      await supabase
-        .from('memories')
-        .delete()
-        .eq('trip_id', actualTripId)
-        .not('id', 'in', `(${currentMemIds.join(',')})`);
+      await supabase.from('memories').delete().eq('trip_id', actualTripId).not('id', 'in', `(${currentMemIds.join(',')})`);
+    } else {
+      await supabase.from('memories').delete().eq('trip_id', actualTripId);
     }
 
     return { ...trip, id: actualTripId, userId };
