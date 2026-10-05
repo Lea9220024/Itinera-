@@ -13,7 +13,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// AI is served exclusively by the Supabase Edge Function.\n\n// Vite Middleware for development & Static serving for production
+// AI is served exclusively by the Supabase Edge Function.
+
+// Vite Middleware for development & Static serving for production
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
