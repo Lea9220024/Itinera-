@@ -63,7 +63,8 @@ export class AIService {
       }
     }
 
-    // Offline / unavailable fallback. Production never routes through a second AI backend.\n    // Local deterministic fallback (Zero API key exposed)
+    // Offline / unavailable fallback. Production never routes through a second AI backend.
+    // Local deterministic fallback (Zero API key exposed)
     return this.generateLocalFallback(query.toLowerCase().trim(), currentTrip);
   }
 
