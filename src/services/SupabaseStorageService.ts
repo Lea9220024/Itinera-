@@ -252,10 +252,7 @@ export class SupabaseStorageService implements IStorageService {
         .select()
         .single();
 
-      if (dayErr) {
-        console.warn('Error saving day in Supabase:', dayErr);
-        continue;
-      }
+      if (dayErr || !savedDayData?.id) { throw new StorageError('Error guardando día ' + day.dayNumber + ': ' + (dayErr?.message || 'respuesta inválida')); }
 
       const actualDayId = savedDayData.id;
       savedDayIds.push(actualDayId);
@@ -284,19 +281,19 @@ export class SupabaseStorageService implements IStorageService {
 
         if (isValidUuid(act.id)) {
           actRecord.id = act.id;
-          const { data: actSaved } = await supabase
+          const { data: actSaved, error: actErr } = await supabase
             .from('activities')
             .upsert(actRecord, { onConflict: 'id' })
             .select()
             .single();
-          if (actSaved?.id) currentActIds.push(actSaved.id);
+          if (actErr || !actSaved?.id) throw new StorageError('Error guardando actividad: ' + (actErr?.message || 'respuesta inválida')); currentActIds.push(actSaved.id);
         } else {
-          const { data: actSaved } = await supabase
+          const { data: actSaved, error: actErr } = await supabase
             .from('activities')
             .insert(actRecord)
             .select()
             .single();
-          if (actSaved?.id) currentActIds.push(actSaved.id);
+          if (actErr || !actSaved?.id) throw new StorageError('Error guardando actividad: ' + (actErr?.message || 'respuesta inválida')); currentActIds.push(actSaved.id);
         }
       }
 
@@ -333,19 +330,19 @@ export class SupabaseStorageService implements IStorageService {
 
       if (isValidUuid(exp.id)) {
         expRecord.id = exp.id;
-        const { data: expSaved } = await supabase
+        const { data: expSaved, error: expErr } = await supabase
           .from('expenses')
           .upsert(expRecord, { onConflict: 'id' })
           .select()
           .single();
-        if (expSaved?.id) currentExpIds.push(expSaved.id);
+        if (expErr || !expSaved?.id) throw new StorageError('Error guardando gasto: ' + (expErr?.message || 'respuesta inválida')); currentExpIds.push(expSaved.id);
       } else {
-        const { data: expSaved } = await supabase
+        const { data: expSaved, error: expErr } = await supabase
           .from('expenses')
           .insert(expRecord)
           .select()
           .single();
-        if (expSaved?.id) currentExpIds.push(expSaved.id);
+        if (expErr || !expSaved?.id) throw new StorageError('Error guardando gasto: ' + (expErr?.message || 'respuesta inválida')); currentExpIds.push(expSaved.id);
       }
     }
 
@@ -371,19 +368,19 @@ export class SupabaseStorageService implements IStorageService {
 
       if (isValidUuid(chk.id)) {
         chkRecord.id = chk.id;
-        const { data: chkSaved } = await supabase
+        const { data: chkSaved, error: chkErr } = await supabase
           .from('checklist_items')
           .upsert(chkRecord, { onConflict: 'id' })
           .select()
           .single();
-        if (chkSaved?.id) currentChkIds.push(chkSaved.id);
+        if (chkErr || !chkSaved?.id) throw new StorageError('Error guardando checklist: ' + (chkErr?.message || 'respuesta inválida')); currentChkIds.push(chkSaved.id);
       } else {
-        const { data: chkSaved } = await supabase
+        const { data: chkSaved, error: chkErr } = await supabase
           .from('checklist_items')
           .insert(chkRecord)
           .select()
           .single();
-        if (chkSaved?.id) currentChkIds.push(chkSaved.id);
+        if (chkErr || !chkSaved?.id) throw new StorageError('Error guardando checklist: ' + (chkErr?.message || 'respuesta inválida')); currentChkIds.push(chkSaved.id);
       }
     }
 
@@ -409,19 +406,19 @@ export class SupabaseStorageService implements IStorageService {
 
       if (isValidUuid(mem.id)) {
         memRecord.id = mem.id;
-        const { data: memSaved } = await supabase
+        const { data: memSaved, error: memErr } = await supabase
           .from('memories')
           .upsert(memRecord, { onConflict: 'id' })
           .select()
           .single();
-        if (memSaved?.id) currentMemIds.push(memSaved.id);
+        if (memErr || !memSaved?.id) throw new StorageError('Error guardando memoria: ' + (memErr?.message || 'respuesta inválida')); currentMemIds.push(memSaved.id);
       } else {
-        const { data: memSaved } = await supabase
+        const { data: memSaved, error: memErr } = await supabase
           .from('memories')
           .insert(memRecord)
           .select()
           .single();
-        if (memSaved?.id) currentMemIds.push(memSaved.id);
+        if (memErr || !memSaved?.id) throw new StorageError('Error guardando memoria: ' + (memErr?.message || 'respuesta inválida')); currentMemIds.push(memSaved.id);
       }
     }
 
