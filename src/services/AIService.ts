@@ -13,8 +13,7 @@ export class AIService {
    * Generates a context-aware assistant response.
    * Priority:
    * 1. Official Supabase Edge Function ('ai-assistant') with user JWT & CORS validation.
-   * 2. Server proxy fallback (/api/ai-assistant) for local development without Edge Functions.
-   * 3. Deterministic local domain reasoning engine (Zero API key exposed) for offline/demo mode.
+   * 2. Deterministic local domain reasoning engine (Zero API key exposed) for offline/demo mode.
    */
   static async askAssistant(
     query: string,
@@ -64,50 +63,7 @@ export class AIService {
       }
     }
 
-    // 2. Secondary Path: Express server proxy (/api/ai-assistant)
-    try {
-      const res = await fetch('/api/ai-assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          context: minimalContext,
-        }),
-      });
-
-      if (res.ok) {
-        const rawJson = await res.json();
-        const validated = AIActionValidator.validateResponse(rawJson);
-
-        let proposal: AIActionProposal | undefined = undefined;
-
-        if (validated.action !== 'NONE') {
-          const actionCheck = AIActionValidator.validateActionProposal(
-            validated.action,
-            validated.payload
-          );
-
-          if (actionCheck.valid) {
-            proposal = {
-              id: `prop-${Date.now()}`,
-              title: validated.title || 'Propuesta de ajuste en itinerario',
-              description: validated.description || 'Modificación recomendada por el asistente.',
-              type: validated.action as AIActionType,
-              payload: actionCheck.cleanPayload || validated.payload,
-            };
-          }
-        }
-
-        return {
-          text: validated.message,
-          proposal,
-        };
-      }
-    } catch {
-      // Server proxy not reachable, proceed to local fallback
-    }
-
-    // 3. Offline / Local smart travel engine fallback (Zero API key exposed)
+    // Offline / unavailable fallback. Production never routes through a second AI backend.\n    // Local deterministic fallback (Zero API key exposed)
     return this.generateLocalFallback(query.toLowerCase().trim(), currentTrip);
   }
 
