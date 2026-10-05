@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="itinera-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#itinera-grad)"/>
+  <!-- Compass & Trail motif -->
+  <path d="M256 110 C 200 110 156 154 156 210 C 156 280 256 390 256 390 C 256 390 356 280 356 210 C 356 154 312 110 256 110 Z" fill="#ffffff" opacity="0.95"/>
+  <circle cx="256" cy="210" r="42" fill="#047857"/>
+  <polygon points="256,182 268,210 256,238 244,210" fill="#f59e0b"/>
+</svg>

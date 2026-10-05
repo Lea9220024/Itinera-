@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Itinera Travel Planner",
+  "short_name": "Itinera",
+  "description": "Planificador de viajes inteligente con itinerarios adaptables, mapas, presupuesto y asistente.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#065f46",
+  "background_color": "#fbfbfa",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

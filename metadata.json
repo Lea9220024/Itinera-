@@ -1,0 +1,6 @@
+{
+  "name": "Itinera - Smart Travel Planner",
+  "description": "Plataforma inteligente para planificar, organizar y vivir viajes con itinerarios adaptables, mapas, presupuesto y asistente de viaje.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
