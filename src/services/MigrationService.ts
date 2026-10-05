@@ -4,100 +4,65 @@ import { SupabaseStorageService } from './SupabaseStorageService';
 import { Trip, StorageError } from '../types';
 
 export const MIGRATION_VERSION_KEY = 'itinera_migration_version';
-export const CURRENT_MIGRATION_VERSION = '2.0.0';
+export const MIGRATION_MAP_KEY = 'itinera_migration_map_v1';
+export const CURRENT_MIGRATION_VERSION = '2.1.0';
 
-export interface MigrationStatus {
-  hasLocalData: boolean;
-  localTripCount: number;
-  isMigrated: boolean;
-}
+export interface MigrationStatus { hasLocalData: boolean; localTripCount: number; isMigrated: boolean; }
+export interface MigrationReport { tripId: string; cloudTripId?: string; daysMigrated: number; activitiesMigrated: number; expensesMigrated: number; checklistMigrated: number; memoriesMigrated: number; errors: string[]; status: 'success'|'failed'|'partial'; }
+
+const counts = (trip: Trip) => ({ days: trip.days.length, activities: trip.days.reduce((n, d) => n + d.activities.length, 0), expenses: trip.expenses.length, checklist: trip.checklist.length, memories: trip.memories.length });
 
 export class MigrationService {
-  /**
-   * Checks if there are local trips in localStorage that have not yet been migrated
-   */
   static async checkMigrationStatus(): Promise<MigrationStatus> {
     try {
-      const localTripsJson = localStorage.getItem('itinera_trips_v1');
-      const migrationVersion = localStorage.getItem(MIGRATION_VERSION_KEY);
-
-      if (!localTripsJson) {
-        return { hasLocalData: false, localTripCount: 0, isMigrated: true };
-      }
-
-      const trips: Trip[] = JSON.parse(localTripsJson);
+      const raw = localStorage.getItem('itinera_trips_v1');
+      const version = localStorage.getItem(MIGRATION_VERSION_KEY);
+      const trips: Trip[] = raw ? JSON.parse(raw) : [];
       const hasLocalData = Array.isArray(trips) && trips.length > 0;
-      const isMigrated = migrationVersion === CURRENT_MIGRATION_VERSION;
-
-      return {
-        hasLocalData,
-        localTripCount: hasLocalData ? trips.length : 0,
-        isMigrated,
-      };
+      return { hasLocalData, localTripCount: hasLocalData ? trips.length : 0, isMigrated: !hasLocalData || version === CURRENT_MIGRATION_VERSION };
     } catch {
       return { hasLocalData: false, localTripCount: 0, isMigrated: false };
     }
   }
 
-  /**
-   * Executes the non-destructive migration of all local trips into the authenticated user's Supabase account.
-   */
-  static async migrateLocalDataToSupabase(): Promise<{
-    success: boolean;
-    migratedCount: number;
-    error?: string;
-  }> {
-    if (!supabase) {
-      return { success: false, migratedCount: 0, error: 'Supabase no está configurado.' };
+  static async migrateLocalDataToSupabase(): Promise<{ success: boolean; migratedCount: number; reports: MigrationReport[]; error?: string }> {
+    if (!supabase) return { success: false, migratedCount: 0, reports: [], error: 'Supabase no está configurado.' };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return { success: false, migratedCount: 0, reports: [], error: 'Usuario no autenticado.' };
+    const localTrips = await StorageService.getTrips();
+    if (!localTrips.length) { localStorage.setItem(MIGRATION_VERSION_KEY, CURRENT_MIGRATION_VERSION); return { success: true, migratedCount: 0, reports: [] }; }
+
+    let idMap: Record<string, string> = {};
+    try { idMap = JSON.parse(localStorage.getItem(MIGRATION_MAP_KEY) || '{}'); } catch { idMap = {}; }
+    const storage = new SupabaseStorageService();
+    const reports: MigrationReport[] = [];
+
+    for (const localTrip of localTrips) {
+      const report: MigrationReport = { tripId: localTrip.id, daysMigrated: 0, activitiesMigrated: 0, expensesMigrated: 0, checklistMigrated: 0, memoriesMigrated: 0, errors: [], status: 'failed' };
+      try {
+        const mappedId = idMap[localTrip.id];
+        const candidate = mappedId ? { ...localTrip, id: mappedId, userId: session.user.id } : { ...localTrip, userId: session.user.id };
+        const saved = await storage.saveTrip(candidate);
+        report.cloudTripId = saved.id;
+        const verified = await storage.getTripById(saved.id);
+        if (!verified) throw new StorageError('El viaje migrado no pudo recuperarse para verificación.');
+        const expected = counts(localTrip);
+        const actual = counts(verified);
+        report.daysMigrated = actual.days; report.activitiesMigrated = actual.activities; report.expensesMigrated = actual.expenses; report.checklistMigrated = actual.checklist; report.memoriesMigrated = actual.memories;
+        if (JSON.stringify(expected) !== JSON.stringify(actual)) throw new StorageError('Mismatch de integridad: esperado ' + JSON.stringify(expected) + ', obtenido ' + JSON.stringify(actual));
+        idMap[localTrip.id] = saved.id;
+        localStorage.setItem(MIGRATION_MAP_KEY, JSON.stringify(idMap));
+        report.status = 'success';
+      } catch (e: any) {
+        report.errors.push(e?.message || 'Error de migración');
+        report.status = 'failed';
+      }
+      reports.push(report);
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.user?.id) {
-      return { success: false, migratedCount: 0, error: 'Inicia sesión para sincronizar tus viajes locales.' };
-    }
-
-    try {
-      const localTrips = await StorageService.getTrips();
-      if (!localTrips || localTrips.length === 0) {
-        localStorage.setItem(MIGRATION_VERSION_KEY, CURRENT_MIGRATION_VERSION);
-        return { success: true, migratedCount: 0 };
-      }
-
-      const supabaseStorage = new SupabaseStorageService();
-      let migrated = 0;
-
-      for (const trip of localTrips) {
-        // Save to Supabase with proper user ownership
-        await supabaseStorage.saveTrip({
-          ...trip,
-          userId: session.user.id,
-        });
-        migrated++;
-      }
-
-      // Verify integrity: Query back to ensure at least one trip is confirmed in Supabase
-      const verifiedTrips = await supabaseStorage.getTrips();
-      if (verifiedTrips.length === 0 && migrated > 0) {
-        throw new StorageError('Fallo en la verificación de integridad de la migración.');
-      }
-
-      // Only mark migration complete AFTER confirmed verification
-      localStorage.setItem(MIGRATION_VERSION_KEY, CURRENT_MIGRATION_VERSION);
-
-      return {
-        success: true,
-        migratedCount: migrated,
-      };
-    } catch (err: any) {
-      console.error('Error during migration to Supabase:', err);
-      return {
-        success: false,
-        migratedCount: 0,
-        error: err.message || 'Error durante la migración a Supabase.',
-      };
-    }
+    const allSuccess = reports.length === localTrips.length && reports.every(r => r.status === 'success');
+    if (!allSuccess) return { success: false, migratedCount: reports.filter(r => r.status === 'success').length, reports, error: 'Migración incompleta. Los datos locales se conservaron.' };
+    localStorage.setItem(MIGRATION_VERSION_KEY, CURRENT_MIGRATION_VERSION);
+    return { success: true, migratedCount: reports.length, reports };
   }
 }
