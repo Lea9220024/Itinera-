@@ -2,6 +2,14 @@ import { supabase } from '../lib/supabase/client';
 import { IStorageService } from './StorageService';
 import { Trip, DayPlan, Activity, Expense, ChecklistItem, Memory, UserPreferences, StorageError } from '../types';
 
+/**
+ * Checks if a string conforms to the standard UUID v4 format
+ */
+export function isValidUuid(id?: string | null): boolean {
+  if (!id || typeof id !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
 export class SupabaseStorageService implements IStorageService {
   private async getUserId(): Promise<string> {
     if (!supabase) throw new StorageError('Supabase no está configurado.');
@@ -114,7 +122,7 @@ export class SupabaseStorageService implements IStorageService {
           id: c.id,
           tripId: t.id,
           phase: 'before',
-          category: c.category || 'General',
+          category: c.category,
           title: c.title,
           completed: c.completed,
         }));
@@ -131,9 +139,10 @@ export class SupabaseStorageService implements IStorageService {
           tags: [],
         }));
 
-        const startDateObj = new Date(t.start_date);
-        const endDateObj = new Date(t.end_date);
-        const diffDays = Math.ceil(Math.abs(endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const diffDays = Math.ceil(
+          Math.abs(new Date(t.end_date).getTime() - new Date(t.start_date).getTime()) /
+            (1000 * 60 * 60 * 24)
+        ) + 1;
 
         trips.push({
           id: t.id,
@@ -184,131 +193,244 @@ export class SupabaseStorageService implements IStorageService {
     if (!supabase) throw new StorageError('Supabase no está disponible.');
     const userId = await this.getUserId();
 
-    // 1. Upsert trip
-    const { data: savedTripData, error: tripErr } = await supabase
-      .from('trips')
-      .upsert(
-        {
-          id: trip.id.includes('-') && trip.id.length === 36 ? trip.id : undefined,
-          user_id: userId,
-          name: trip.name,
-          destination: trip.destination,
-          description: trip.summary || '',
-          start_date: trip.startDate,
-          end_date: trip.endDate,
-          travelers_count: trip.travelers.adults + trip.travelers.children,
-          budget_amount: trip.budgetTotal,
-          budget_currency: trip.currency,
-          travel_style: trip.pace,
-          status: trip.status,
-          cover_image_url: trip.coverImage,
-        },
-        { onConflict: 'id' }
-      )
-      .select()
-      .single();
+    const tripRecord: Record<string, any> = {
+      user_id: userId,
+      name: trip.name,
+      destination: trip.destination,
+      description: trip.summary || '',
+      start_date: trip.startDate,
+      end_date: trip.endDate,
+      travelers_count: (trip.travelers?.adults || 2) + (trip.travelers?.children || 0),
+      budget_amount: trip.budgetTotal,
+      budget_currency: trip.currency,
+      travel_style: trip.pace,
+      status: trip.status,
+      cover_image_url: trip.coverImage,
+    };
 
-    if (tripErr) throw new StorageError(`Error al guardar viaje en Supabase: ${tripErr.message}`);
-    const actualTripId = savedTripData.id;
+    let actualTripId = trip.id;
+
+    // 1. Insert or Upsert Trip based on valid UUID format
+    if (isValidUuid(trip.id)) {
+      tripRecord.id = trip.id;
+      const { data, error } = await supabase
+        .from('trips')
+        .upsert(tripRecord, { onConflict: 'id' })
+        .select()
+        .single();
+      if (error) throw new StorageError(`Error al actualizar viaje en Supabase: ${error.message}`);
+      actualTripId = data.id;
+    } else {
+      // New trip from local storage with string ID: insert without ID to generate fresh UUID
+      const { data, error } = await supabase
+        .from('trips')
+        .insert(tripRecord)
+        .select()
+        .single();
+      if (error) throw new StorageError(`Error al insertar viaje en Supabase: ${error.message}`);
+      actualTripId = data.id;
+    }
 
     // 2. Synchronize days
+    const savedDayIds: string[] = [];
     for (const day of trip.days) {
+      const dayRecord: Record<string, any> = {
+        trip_id: actualTripId,
+        day_number: day.dayNumber,
+        date: day.date,
+        city: day.city,
+        notes: day.theme || null,
+      };
+
+      if (isValidUuid(day.id)) {
+        dayRecord.id = day.id;
+      }
+
       const { data: savedDayData, error: dayErr } = await supabase
         .from('trip_days')
-        .upsert(
-          {
-            id: day.id.length === 36 ? day.id : undefined,
-            trip_id: actualTripId,
-            day_number: day.dayNumber,
-            date: day.date,
-            city: day.city,
-            notes: day.theme || null,
-          },
-          { onConflict: 'trip_id,day_number' }
-        )
+        .upsert(dayRecord, { onConflict: 'trip_id,day_number' })
         .select()
         .single();
 
       if (dayErr) {
-        console.warn('Error saving day:', dayErr);
+        console.warn('Error saving day in Supabase:', dayErr);
         continue;
       }
 
       const actualDayId = savedDayData.id;
+      savedDayIds.push(actualDayId);
 
       // 3. Synchronize activities for this day
+      const currentActIds: string[] = [];
       for (let idx = 0; idx < day.activities.length; idx++) {
         const act = day.activities[idx];
-        await supabase.from('activities').upsert(
-          {
-            id: act.id.length === 36 ? act.id : undefined,
-            trip_day_id: actualDayId,
-            name: act.name,
-            description: act.description,
-            category: act.category,
-            start_time: act.startTime,
-            end_time: act.endTime,
-            duration_minutes: act.durationMinutes,
-            location_name: act.location,
-            latitude: act.latitude,
-            longitude: act.longitude,
-            estimated_cost: act.estimatedCost,
-            currency: act.currency,
-            notes: act.notes || null,
-            status: act.completed ? 'completed' : 'pending',
-            sort_order: idx,
-          },
-          { onConflict: 'id' }
-        );
+        const actRecord: Record<string, any> = {
+          trip_day_id: actualDayId,
+          name: act.name,
+          description: act.description,
+          category: act.category,
+          start_time: act.startTime,
+          end_time: act.endTime,
+          duration_minutes: act.durationMinutes,
+          location_name: act.location,
+          latitude: act.latitude,
+          longitude: act.longitude,
+          estimated_cost: act.estimatedCost,
+          currency: act.currency,
+          notes: act.notes || null,
+          status: act.completed ? 'completed' : 'pending',
+          sort_order: idx,
+        };
+
+        if (isValidUuid(act.id)) {
+          actRecord.id = act.id;
+          const { data: actSaved } = await supabase
+            .from('activities')
+            .upsert(actRecord, { onConflict: 'id' })
+            .select()
+            .single();
+          if (actSaved?.id) currentActIds.push(actSaved.id);
+        } else {
+          const { data: actSaved } = await supabase
+            .from('activities')
+            .insert(actRecord)
+            .select()
+            .single();
+          if (actSaved?.id) currentActIds.push(actSaved.id);
+        }
+      }
+
+      // Reconcile: delete removed activities for this day
+      if (currentActIds.length > 0) {
+        await supabase
+          .from('activities')
+          .delete()
+          .eq('trip_day_id', actualDayId)
+          .not('id', 'in', `(${currentActIds.join(',')})`);
       }
     }
 
-    // 4. Upsert expenses
-    for (const exp of trip.expenses) {
-      await supabase.from('expenses').upsert(
-        {
-          id: exp.id.length === 36 ? exp.id : undefined,
-          trip_id: actualTripId,
-          category: exp.category,
-          description: exp.description,
-          amount: exp.amount,
-          currency: exp.currency,
-          date: exp.date,
-        },
-        { onConflict: 'id' }
-      );
+    // Delete removed days
+    if (savedDayIds.length > 0) {
+      await supabase
+        .from('trip_days')
+        .delete()
+        .eq('trip_id', actualTripId)
+        .not('id', 'in', `(${savedDayIds.join(',')})`);
     }
 
-    // 5. Upsert checklist
+    // 4. Synchronize Expenses
+    const currentExpIds: string[] = [];
+    for (const exp of trip.expenses) {
+      const expRecord: Record<string, any> = {
+        trip_id: actualTripId,
+        category: exp.category,
+        description: exp.description,
+        amount: exp.amount,
+        currency: exp.currency,
+        date: exp.date,
+      };
+
+      if (isValidUuid(exp.id)) {
+        expRecord.id = exp.id;
+        const { data: expSaved } = await supabase
+          .from('expenses')
+          .upsert(expRecord, { onConflict: 'id' })
+          .select()
+          .single();
+        if (expSaved?.id) currentExpIds.push(expSaved.id);
+      } else {
+        const { data: expSaved } = await supabase
+          .from('expenses')
+          .insert(expRecord)
+          .select()
+          .single();
+        if (expSaved?.id) currentExpIds.push(expSaved.id);
+      }
+    }
+
+    if (currentExpIds.length > 0) {
+      await supabase
+        .from('expenses')
+        .delete()
+        .eq('trip_id', actualTripId)
+        .not('id', 'in', `(${currentExpIds.join(',')})`);
+    }
+
+    // 5. Synchronize Checklist
+    const currentChkIds: string[] = [];
     for (let idx = 0; idx < trip.checklist.length; idx++) {
       const chk = trip.checklist[idx];
-      await supabase.from('checklist_items').upsert(
-        {
-          id: chk.id.length === 36 ? chk.id : undefined,
-          trip_id: actualTripId,
-          title: chk.title,
-          category: chk.category,
-          completed: chk.completed,
-          sort_order: idx,
-        },
-        { onConflict: 'id' }
-      );
+      const chkRecord: Record<string, any> = {
+        trip_id: actualTripId,
+        title: chk.title,
+        category: chk.category,
+        completed: chk.completed,
+        sort_order: idx,
+      };
+
+      if (isValidUuid(chk.id)) {
+        chkRecord.id = chk.id;
+        const { data: chkSaved } = await supabase
+          .from('checklist_items')
+          .upsert(chkRecord, { onConflict: 'id' })
+          .select()
+          .single();
+        if (chkSaved?.id) currentChkIds.push(chkSaved.id);
+      } else {
+        const { data: chkSaved } = await supabase
+          .from('checklist_items')
+          .insert(chkRecord)
+          .select()
+          .single();
+        if (chkSaved?.id) currentChkIds.push(chkSaved.id);
+      }
     }
 
-    // 6. Upsert memories
+    if (currentChkIds.length > 0) {
+      await supabase
+        .from('checklist_items')
+        .delete()
+        .eq('trip_id', actualTripId)
+        .not('id', 'in', `(${currentChkIds.join(',')})`);
+    }
+
+    // 6. Synchronize Memories
+    const currentMemIds: string[] = [];
     for (const mem of trip.memories) {
-      await supabase.from('memories').upsert(
-        {
-          id: mem.id.length === 36 ? mem.id : undefined,
-          trip_id: actualTripId,
-          title: mem.title,
-          description: mem.note,
-          image_url: mem.imageUrl || null,
-          date: mem.date,
-          location: mem.location,
-        },
-        { onConflict: 'id' }
-      );
+      const memRecord: Record<string, any> = {
+        trip_id: actualTripId,
+        title: mem.title,
+        description: mem.note,
+        image_url: mem.imageUrl || null,
+        date: mem.date,
+        location: mem.location,
+      };
+
+      if (isValidUuid(mem.id)) {
+        memRecord.id = mem.id;
+        const { data: memSaved } = await supabase
+          .from('memories')
+          .upsert(memRecord, { onConflict: 'id' })
+          .select()
+          .single();
+        if (memSaved?.id) currentMemIds.push(memSaved.id);
+      } else {
+        const { data: memSaved } = await supabase
+          .from('memories')
+          .insert(memRecord)
+          .select()
+          .single();
+        if (memSaved?.id) currentMemIds.push(memSaved.id);
+      }
+    }
+
+    if (currentMemIds.length > 0) {
+      await supabase
+        .from('memories')
+        .delete()
+        .eq('trip_id', actualTripId)
+        .not('id', 'in', `(${currentMemIds.join(',')})`);
     }
 
     return { ...trip, id: actualTripId, userId };
@@ -420,7 +542,6 @@ export class SupabaseStorageService implements IStorageService {
   }
 
   async resetToDemo(): Promise<Trip[]> {
-    // In Supabase mode, resetting to demo leaves cloud data intact or provisions the demo
     return this.getTrips();
   }
 }

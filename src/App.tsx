@@ -279,6 +279,8 @@ export default function App() {
             darkMode={darkMode}
             onToggleDarkMode={() => setDarkMode(!darkMode)}
             onResetDemo={handleResetDemo}
+            storage={activeStorage}
+            user={user}
           />
         )}
       </main>

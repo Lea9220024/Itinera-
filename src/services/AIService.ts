@@ -1,6 +1,7 @@
 import { AIActionProposal, AIActionType, Trip, UserPreferences } from '../types';
 import { TripContextBuilder } from './TripContextBuilder';
 import { AIActionValidator } from './AIActionValidator';
+import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 
 export interface AIResponse {
   text: string;
@@ -9,8 +10,11 @@ export interface AIResponse {
 
 export class AIService {
   /**
-   * Generates a context-aware assistant response via the secure backend/Edge Function,
-   * returning validated structured JSON actions.
+   * Generates a context-aware assistant response.
+   * Priority:
+   * 1. Official Supabase Edge Function ('ai-assistant') with user JWT & CORS validation.
+   * 2. Server proxy fallback (/api/ai-assistant) for local development without Edge Functions.
+   * 3. Deterministic local domain reasoning engine (Zero API key exposed) for offline/demo mode.
    */
   static async askAssistant(
     query: string,
@@ -19,7 +23,48 @@ export class AIService {
   ): Promise<AIResponse> {
     const minimalContext = TripContextBuilder.build(currentTrip, preferences);
 
-    // 1. Attempt to call server-side AI proxy (/api/ai-assistant)
+    // 1. Primary Official Path: Supabase Edge Function via supabase.functions.invoke
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.functions.invoke('ai-assistant', {
+          body: {
+            query,
+            context: minimalContext,
+          },
+        });
+
+        if (!error && data) {
+          const validated = AIActionValidator.validateResponse(data);
+          let proposal: AIActionProposal | undefined = undefined;
+
+          if (validated.action !== 'NONE') {
+            const actionCheck = AIActionValidator.validateActionProposal(
+              validated.action,
+              validated.payload
+            );
+
+            if (actionCheck.valid) {
+              proposal = {
+                id: `prop-${Date.now()}`,
+                title: validated.title || 'Propuesta de ajuste en itinerario',
+                description: validated.description || 'Modificación recomendada por el asistente.',
+                type: validated.action as AIActionType,
+                payload: actionCheck.cleanPayload || validated.payload,
+              };
+            }
+          }
+
+          return {
+            text: validated.message,
+            proposal,
+          };
+        }
+      } catch (edgeErr) {
+        console.warn('AIService: Supabase Edge Function invoke failed, trying fallback:', edgeErr);
+      }
+    }
+
+    // 2. Secondary Path: Express server proxy (/api/ai-assistant)
     try {
       const res = await fetch('/api/ai-assistant', {
         method: 'POST',
@@ -58,11 +103,11 @@ export class AIService {
           proposal,
         };
       }
-    } catch (netErr) {
-      console.warn('AIService: Server AI endpoint unavailable, using smart local engine fallback:', netErr);
+    } catch {
+      // Server proxy not reachable, proceed to local fallback
     }
 
-    // 2. Offline / Local smart travel engine fallback (Zero API key exposed)
+    // 3. Offline / Local smart travel engine fallback (Zero API key exposed)
     return this.generateLocalFallback(query.toLowerCase().trim(), currentTrip);
   }
 

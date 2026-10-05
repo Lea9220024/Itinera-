@@ -69,10 +69,25 @@ export type StructuredAIResponse = z.infer<typeof StructuredAIResponseSchema>;
 
 export class AIActionValidator {
   /**
-   * Validates raw AI output against the expected schema
+   * Validates raw AI output against the expected schema with resilient fallback
    */
   static validateResponse(raw: unknown): StructuredAIResponse {
-    return StructuredAIResponseSchema.parse(raw);
+    try {
+      return StructuredAIResponseSchema.parse(raw);
+    } catch {
+      if (raw && typeof raw === 'object' && 'message' in (raw as any)) {
+        return {
+          message: String((raw as any).message || 'Respuesta recibida del asistente.'),
+          action: 'NONE',
+          payload: {},
+        };
+      }
+      return {
+        message: typeof raw === 'string' ? raw : 'No se pudo interpretar la respuesta del asistente.',
+        action: 'NONE',
+        payload: {},
+      };
+    }
   }
 
   /**

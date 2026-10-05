@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { User, Sliders, Moon, Sun, RotateCcw, Check, Sparkles, Globe } from 'lucide-react';
-import { UserPreferences } from '../../types';
-import { StorageService } from '../../services/StorageService';
+import { User, Sliders, Moon, Sun, RotateCcw, Check, Sparkles, Globe, ShieldCheck } from 'lucide-react';
+import { UserPreferences, AuthUser } from '../../types';
+import { StorageService, IStorageService } from '../../services/StorageService';
 
 interface ProfileViewProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onResetDemo: () => void;
+  storage?: IStorageService;
+  user?: AuthUser | null;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   darkMode,
   onToggleDarkMode,
   onResetDemo,
+  storage = StorageService,
+  user,
 }) => {
   const [prefs, setPrefs] = useState<UserPreferences>({
     gastronomy: 8,
@@ -27,15 +31,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [savedFeedback, setSavedFeedback] = useState(false);
 
   useEffect(() => {
-    StorageService.getUserPreferences().then((p) => {
+    storage.getUserPreferences().then((p) => {
       if (p) setPrefs(p);
     });
-  }, []);
+  }, [storage]);
 
   const handleUpdatePref = (key: keyof UserPreferences, value: number | string) => {
     const updated = { ...prefs, [key]: value };
     setPrefs(updated);
-    StorageService.saveUserPreferences(updated);
+    storage.saveUserPreferences(updated);
     setSavedFeedback(true);
     setTimeout(() => setSavedFeedback(false), 1500);
   };
@@ -59,10 +63,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100 font-serif">
-              Perfil de Viajero
+              {user ? (user.name || user.email) : 'Perfil de Viajero'}
             </h2>
-            <span className="text-xs text-stone-500 dark:text-stone-400">
-              Preferencias calibradas para el motor de itinerarios
+            <span className="text-xs text-stone-500 dark:text-stone-400 block">
+              {user ? (
+                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <ShieldCheck className="w-3.5 h-3.5 inline" /> Cuenta Supabase conectada · {user.email}
+                </span>
+              ) : (
+                'Modo Demo Local · Preferencias calibradas para el motor de itinerarios'
+              )}
             </span>
           </div>
         </div>

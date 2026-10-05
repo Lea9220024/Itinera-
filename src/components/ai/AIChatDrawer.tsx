@@ -146,6 +146,42 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         activities: day.activities.filter((a) => a.id !== proposal.payload.activityId),
       }));
       onUpdateTrip({ ...trip, days: updatedDays });
+    } else if (proposal.type === 'MOVE_ACTIVITY' && proposal.payload.activityId && proposal.payload.targetDayId) {
+      const targetDayId = proposal.payload.targetDayId;
+      let movedActivity: Activity | null = null;
+      const daysWithoutAct = trip.days.map((day) => {
+        const found = day.activities.find((a) => a.id === proposal.payload.activityId);
+        if (found) {
+          movedActivity = { ...found, dayId: targetDayId };
+          return { ...day, activities: day.activities.filter((a) => a.id !== proposal.payload.activityId) };
+        }
+        return day;
+      });
+
+      if (movedActivity) {
+        const actToAdd: Activity = movedActivity;
+        const finalDays = daysWithoutAct.map((day) => {
+          if (day.id === targetDayId) {
+            return {
+              ...day,
+              activities: [...day.activities, actToAdd].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+            };
+          }
+          return day;
+        });
+        onUpdateTrip({ ...trip, days: finalDays });
+      }
+    } else if (proposal.type === 'OPTIMIZE_DAY' && proposal.payload.targetDayId) {
+      const updatedDays = trip.days.map((day) => {
+        if (day.id === proposal.payload.targetDayId) {
+          return {
+            ...day,
+            activities: [...day.activities].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+          };
+        }
+        return day;
+      });
+      onUpdateTrip({ ...trip, days: updatedDays });
     }
   };
 

@@ -1,12 +1,10 @@
-// Itinera PWA Service Worker
-const CACHE_NAME = 'itinera-cache-v2';
+// Itinera PWA Service Worker - v2.1 Hardened
+const CACHE_NAME = 'itinera-cache-v2.1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon.svg',
-  '/src/main.tsx',
-  '/src/index.css',
 ];
 
 self.addEventListener('install', (event) => {
@@ -37,27 +35,34 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // Network-first for API requests, Cache-first for static assets
-  if (url.pathname.startsWith('/api/') || url.pathname.includes('supabase.co')) {
+  // Network-first for API requests, Auth and Supabase RPCs
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('supabase.co') ||
+    url.pathname.includes('/auth/v1/')
+  ) {
     event.respondWith(
       fetch(event.request).catch(() => {
         return caches.match(event.request);
       })
     );
   } else {
+    // Cache-first with stale-while-revalidate for assets and pages
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
-        return fetch(event.request).then((networkRes) => {
-          if (networkRes && networkRes.status === 200 && networkRes.type === 'basic') {
-            const clone = networkRes.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return networkRes;
-        }).catch(() => {
-          // Offline fallback
-          return caches.match('/');
-        });
+        return fetch(event.request)
+          .then((networkRes) => {
+            if (networkRes && networkRes.status === 200 && networkRes.type === 'basic') {
+              const clone = networkRes.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            }
+            return networkRes;
+          })
+          .catch(() => {
+            // Offline fallback to root entry point
+            return caches.match('/') || caches.match('/index.html');
+          });
       })
     );
   }
