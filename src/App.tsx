@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Trip } from './types';
-import { StorageService } from './services/StorageService';
+import { StorageService, IStorageService } from './services/StorageService';
+import { SupabaseStorageService } from './services/SupabaseStorageService';
+import { MigrationService, MigrationStatus } from './services/MigrationService';
+import { useAuth } from './contexts/AuthContext';
 import { Navbar } from './components/common/Navbar';
 import { MobileBottomNav } from './components/common/MobileBottomNav';
 import { MoreMenuModal } from './components/common/MoreMenuModal';
+import { MigrationBanner } from './components/common/MigrationBanner';
+import { AuthModal } from './components/auth/AuthModal';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ItineraryView } from './components/itinerary/ItineraryView';
 import { MapView } from './components/map/MapView';
@@ -17,6 +22,16 @@ import { TravelWizardModal } from './components/wizard/TravelWizardModal';
 import { AIChatDrawer } from './components/ai/AIChatDrawer';
 
 export default function App() {
+  const { user, isConfigured } = useAuth();
+
+  // Active Storage provider: Supabase when authenticated, LocalStorage for demo/offline
+  const activeStorage: IStorageService = useMemo(() => {
+    if (user && isConfigured) {
+      return new SupabaseStorageService();
+    }
+    return StorageService;
+  }, [user, isConfigured]);
+
   const [trips, setTrips] = useState<Trip[]>([]);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<string>('dashboard');
@@ -26,6 +41,14 @@ export default function App() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Migration status
+  const [migrationStatus, setMigrationStatus] = useState<MigrationStatus>({
+    hasLocalData: false,
+    localTripCount: 0,
+    isMigrated: true,
+  });
 
   // Dark mode state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -50,41 +73,49 @@ export default function App() {
     } catch {}
   }, [darkMode]);
 
-  // Load trips on mount
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      try {
-        const loadedTrips = await StorageService.getTrips();
-        setTrips(loadedTrips);
-        const activeId = await StorageService.getActiveTripId();
-        if (activeId && loadedTrips.some((t) => t.id === activeId)) {
-          setActiveTripId(activeId);
-        } else if (loadedTrips.length > 0) {
-          setActiveTripId(loadedTrips[0].id);
-        }
-      } catch (e) {
-        console.error('Failed to load trips', e);
-      } finally {
-        setLoading(false);
+  // Load trips whenever active storage or user changes
+  const loadTrips = async () => {
+    setLoading(true);
+    try {
+      const loadedTrips = await activeStorage.getTrips();
+      setTrips(loadedTrips);
+      const activeId = await activeStorage.getActiveTripId();
+      if (activeId && loadedTrips.some((t) => t.id === activeId)) {
+        setActiveTripId(activeId);
+      } else if (loadedTrips.length > 0) {
+        setActiveTripId(loadedTrips[0].id);
       }
-    };
-    init();
-  }, []);
+    } catch (e) {
+      console.error('Failed to load trips', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTrips();
+  }, [activeStorage]);
+
+  // Check migration status when user logs in
+  useEffect(() => {
+    if (user && isConfigured) {
+      MigrationService.checkMigrationStatus().then(setMigrationStatus);
+    }
+  }, [user, isConfigured]);
 
   const activeTrip: Trip | null =
     trips.find((t) => t.id === activeTripId) || (trips.length > 0 ? trips[0] : null);
 
   // Update Trip handler
   const handleUpdateTrip = async (updated: Trip) => {
-    await StorageService.saveTrip(updated);
+    await activeStorage.saveTrip(updated);
     setTrips((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
   };
 
   // Trip Created via Wizard
   const handleTripCreated = async (newTrip: Trip) => {
-    await StorageService.saveTrip(newTrip);
-    await StorageService.setActiveTripId(newTrip.id);
+    await activeStorage.saveTrip(newTrip);
+    await activeStorage.setActiveTripId(newTrip.id);
     setTrips((prev) => [newTrip, ...prev]);
     setActiveTripId(newTrip.id);
     setCurrentView('itinerary');
@@ -92,14 +123,14 @@ export default function App() {
 
   // Select Active Trip
   const handleSelectTrip = async (tripId: string) => {
-    await StorageService.setActiveTripId(tripId);
+    await activeStorage.setActiveTripId(tripId);
     setActiveTripId(tripId);
     setCurrentView('itinerary');
   };
 
   // Duplicate Trip
   const handleDuplicateTrip = async (tripId: string) => {
-    const dup = await StorageService.duplicateTrip(tripId);
+    const dup = await activeStorage.duplicateTrip(tripId);
     if (dup) {
       setTrips((prev) => [dup, ...prev]);
       setActiveTripId(dup.id);
@@ -109,7 +140,7 @@ export default function App() {
 
   // Delete Trip
   const handleDeleteTrip = async (tripId: string) => {
-    const success = await StorageService.deleteTrip(tripId);
+    const success = await activeStorage.deleteTrip(tripId);
     if (success) {
       const remaining = trips.filter((t) => t.id !== tripId);
       setTrips(remaining);
@@ -121,12 +152,18 @@ export default function App() {
 
   // Reset to Demo
   const handleResetDemo = async () => {
-    const demo = await StorageService.resetToDemo();
+    const demo = await activeStorage.resetToDemo();
     setTrips(demo);
     if (demo.length > 0) {
       setActiveTripId(demo[0].id);
     }
     setCurrentView('dashboard');
+  };
+
+  // Callback after migration complete
+  const handleMigrationComplete = async () => {
+    await loadTrips();
+    setMigrationStatus((prev) => ({ ...prev, isMigrated: true }));
   };
 
   if (loading) {
@@ -155,10 +192,19 @@ export default function App() {
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         onOpenAIChat={() => setIsAIChatOpen(true)}
         onOpenWizard={() => setIsWizardOpen(true)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        {/* Migration Banner if user logged in and local data not yet migrated */}
+        {user && migrationStatus.hasLocalData && !migrationStatus.isMigrated && (
+          <MigrationBanner
+            localTripCount={migrationStatus.localTripCount}
+            onMigrationComplete={handleMigrationComplete}
+          />
+        )}
+
         {currentView === 'dashboard' && (
           <DashboardView
             activeTrip={activeTrip}
@@ -269,6 +315,13 @@ export default function App() {
           onUpdateTrip={handleUpdateTrip}
         />
       )}
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={() => loadTrips()}
+      />
     </div>
   );
 }

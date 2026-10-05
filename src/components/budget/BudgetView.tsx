@@ -45,9 +45,18 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ trip, onUpdateTrip }) =>
 
   // Math
   const totalBudget = trip.budgetTotal;
-  const spent = trip.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
-  const remaining = totalBudget - spent;
-  const percentageSpent = Math.min(100, Math.round((spent / Math.max(1, totalBudget)) * 100));
+  const actualSpent = trip.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
+
+  // Sum of all activity estimated costs in the trip
+  const activitiesEstimatedSum = trip.days.reduce(
+    (sum, d) => sum + d.activities.reduce((aSum, a) => aSum + (a.estimatedCost || 0), 0),
+    0
+  );
+
+  // Estimated total: sum of estimated activities + registered fixed expenses
+  const totalEstimated = activitiesEstimatedSum + actualSpent;
+  const remaining = totalBudget - actualSpent;
+  const percentageSpent = Math.min(100, Math.round((actualSpent / Math.max(1, totalBudget)) * 100));
 
   // Category breakdown
   const categoryTotals: Record<ExpenseCategory, number> = {
@@ -107,34 +116,48 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ trip, onUpdateTrip }) =>
 
   return (
     <div className="space-y-6 pb-24 md:pb-12">
-      {/* Top 3 Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Top 4 Metric Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Presupuesto Total */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
           <div className="flex items-center justify-between text-stone-500 dark:text-stone-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Presupuesto Total</span>
+            <span>Presupuesto</span>
             <Wallet className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-3xl font-extrabold text-stone-900 dark:text-stone-100 font-mono">
+          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-stone-100 font-mono">
             {trip.currency}{totalBudget.toLocaleString()}
           </div>
-          <span className="text-xs text-stone-500 dark:text-stone-400 mt-1 block">
+          <span className="text-[11px] text-stone-500 dark:text-stone-400 mt-1 block">
             Nivel: <strong className="text-stone-700 dark:text-stone-300 capitalize">{trip.budgetTier}</strong>
           </span>
         </div>
 
-        {/* Gastado Actual */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
+        {/* Estimado Total (Actividades + Gastos) */}
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
           <div className="flex items-center justify-between text-stone-500 dark:text-stone-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <span>Gastado Registrado</span>
+            <span>Estimado</span>
+            <PieChart className="w-4 h-4 text-sky-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-stone-100 font-mono">
+            {trip.currency}{totalEstimated.toLocaleString()}
+          </div>
+          <span className="text-[11px] text-stone-500 dark:text-stone-400 mt-1 block">
+            {trip.currency}{activitiesEstimatedSum} en actividades
+          </span>
+        </div>
+
+        {/* Gastado Real */}
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
+          <div className="flex items-center justify-between text-stone-500 dark:text-stone-400 text-xs font-semibold uppercase tracking-wider mb-2">
+            <span>Gastado</span>
             <TrendingDown className="w-4 h-4 text-amber-600" />
           </div>
-          <div className="text-3xl font-extrabold text-stone-900 dark:text-stone-100 font-mono">
-            {trip.currency}{spent.toLocaleString()}
+          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 dark:text-stone-100 font-mono">
+            {trip.currency}{actualSpent.toLocaleString()}
           </div>
-          <div className="w-full bg-stone-100 dark:bg-stone-800 h-2 rounded-full overflow-hidden mt-3">
+          <div className="w-full bg-stone-100 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden mt-2.5">
             <div
-              className={`h-2 transition-all duration-300 ${
+              className={`h-1.5 transition-all duration-300 ${
                 percentageSpent > 90
                   ? 'bg-rose-500'
                   : percentageSpent > 70
@@ -147,20 +170,20 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ trip, onUpdateTrip }) =>
         </div>
 
         {/* Disponible */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
+        <div className="p-5 rounded-3xl bg-white dark:bg-[#111918] border border-stone-200 dark:border-stone-800 shadow-sm">
           <div className="flex items-center justify-between text-stone-500 dark:text-stone-400 text-xs font-semibold uppercase tracking-wider mb-2">
             <span>Disponible</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
           <div
-            className={`text-3xl font-extrabold font-mono ${
+            className={`text-2xl sm:text-3xl font-extrabold font-mono ${
               remaining >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
             }`}
           >
             {trip.currency}{remaining.toLocaleString()}
           </div>
-          <span className="text-xs text-stone-500 dark:text-stone-400 mt-1 block">
-            {remaining >= 0 ? 'Dentro del margen planificado' : 'Superaste el límite fijado'}
+          <span className="text-[11px] text-stone-500 dark:text-stone-400 mt-1 block">
+            {remaining >= 0 ? 'Margen disponible' : 'Superaste el límite'}
           </span>
         </div>
       </div>
@@ -181,7 +204,7 @@ export const BudgetView: React.FC<BudgetViewProps> = ({ trip, onUpdateTrip }) =>
           {(Object.keys(categoryTotals) as ExpenseCategory[]).map((cat) => {
             const catSpent = categoryTotals[cat];
             if (catSpent === 0) return null;
-            const pct = (catSpent / Math.max(1, spent)) * 100;
+            const pct = (catSpent / Math.max(1, actualSpent)) * 100;
             return (
               <div
                 key={cat}

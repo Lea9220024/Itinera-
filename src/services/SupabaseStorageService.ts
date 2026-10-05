@@ -1,0 +1,426 @@
+import { supabase } from '../lib/supabase/client';
+import { IStorageService } from './StorageService';
+import { Trip, DayPlan, Activity, Expense, ChecklistItem, Memory, UserPreferences, StorageError } from '../types';
+
+export class SupabaseStorageService implements IStorageService {
+  private async getUserId(): Promise<string> {
+    if (!supabase) throw new StorageError('Supabase no está configurado.');
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      throw new StorageError('Usuario no autenticado.');
+    }
+    return session.user.id;
+  }
+
+  async getTrips(): Promise<Trip[]> {
+    if (!supabase) return [];
+    try {
+      const userId = await this.getUserId();
+
+      const { data: dbTrips, error: tripsError } = await supabase
+        .from('trips')
+        .select('*')
+        .eq('user_id', userId)
+        .order('start_date', { ascending: false });
+
+      if (tripsError) throw tripsError;
+      if (!dbTrips || dbTrips.length === 0) return [];
+
+      const trips: Trip[] = [];
+
+      for (const t of dbTrips) {
+        // Load days
+        const { data: dbDays } = await supabase
+          .from('trip_days')
+          .select('*')
+          .eq('trip_id', t.id)
+          .order('day_number', { ascending: true });
+
+        // Load activities for all days of this trip
+        const dayIds = (dbDays || []).map((d) => d.id);
+        let allActivities: any[] = [];
+        if (dayIds.length > 0) {
+          const { data: dbActs } = await supabase
+            .from('activities')
+            .select('*')
+            .in('trip_day_id', dayIds)
+            .order('start_time', { ascending: true });
+          allActivities = dbActs || [];
+        }
+
+        // Load expenses
+        const { data: dbExpenses } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('trip_id', t.id)
+          .order('date', { ascending: true });
+
+        // Load checklist
+        const { data: dbChecklist } = await supabase
+          .from('checklist_items')
+          .select('*')
+          .eq('trip_id', t.id)
+          .order('sort_order', { ascending: true });
+
+        // Load memories
+        const { data: dbMemories } = await supabase
+          .from('memories')
+          .select('*')
+          .eq('trip_id', t.id)
+          .order('date', { ascending: true });
+
+        const days: DayPlan[] = (dbDays || []).map((d) => ({
+          id: d.id,
+          tripId: t.id,
+          dayNumber: d.day_number,
+          date: d.date,
+          city: d.city,
+          theme: d.notes || undefined,
+          activities: allActivities
+            .filter((a) => a.trip_day_id === d.id)
+            .map((a) => ({
+              id: a.id,
+              dayId: d.id,
+              name: a.name,
+              description: a.description || '',
+              category: a.category,
+              startTime: a.start_time,
+              endTime: a.end_time,
+              durationMinutes: a.duration_minutes,
+              location: a.location_name || a.address || '',
+              latitude: Number(a.latitude) || 0,
+              longitude: Number(a.longitude) || 0,
+              estimatedCost: Number(a.estimated_cost) || 0,
+              currency: a.currency || t.budget_currency,
+              notes: a.notes || undefined,
+              completed: a.status === 'completed',
+              sortOrder: a.sort_order,
+            })),
+        }));
+
+        const expenses: Expense[] = (dbExpenses || []).map((e) => ({
+          id: e.id,
+          tripId: t.id,
+          category: e.category,
+          description: e.description,
+          amount: Number(e.amount),
+          currency: e.currency,
+          date: e.date,
+        }));
+
+        const checklist: ChecklistItem[] = (dbChecklist || []).map((c) => ({
+          id: c.id,
+          tripId: t.id,
+          phase: 'before',
+          category: c.category || 'General',
+          title: c.title,
+          completed: c.completed,
+        }));
+
+        const memories: Memory[] = (dbMemories || []).map((m) => ({
+          id: m.id,
+          tripId: t.id,
+          date: m.date,
+          location: m.location || '',
+          title: m.title,
+          note: m.description || '',
+          rating: 5,
+          imageUrl: m.image_url || undefined,
+          tags: [],
+        }));
+
+        const startDateObj = new Date(t.start_date);
+        const endDateObj = new Date(t.end_date);
+        const diffDays = Math.ceil(Math.abs(endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+        trips.push({
+          id: t.id,
+          userId: t.user_id,
+          name: t.name,
+          destination: t.destination,
+          destinationsList: Array.from(new Set(days.map((d) => d.city))),
+          country: t.destination.split('(')[0].trim() || 'Destino',
+          startDate: t.start_date,
+          endDate: t.end_date,
+          totalDays: Math.max(1, diffDays),
+          totalNights: Math.max(0, diffDays - 1),
+          travelers: {
+            adults: t.travelers_count || 2,
+            children: 0,
+            profile: 'couple',
+          },
+          budgetTotal: Number(t.budget_amount) || 0,
+          budgetTier: 'medium',
+          currency: t.budget_currency || '€',
+          pace: (t.travel_style as any) || 'balanced',
+          interests: [],
+          status: t.status as any,
+          coverImage: t.cover_image_url || '/src/assets/images/hero_italy_amalfi_1791169026085.jpg',
+          summary: t.description || '',
+          days,
+          expenses,
+          checklist,
+          memories,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at,
+        });
+      }
+
+      return trips;
+    } catch (err: any) {
+      console.error('SupabaseStorageService.getTrips failed:', err);
+      return [];
+    }
+  }
+
+  async getTripById(id: string): Promise<Trip | null> {
+    const trips = await this.getTrips();
+    return trips.find((t) => t.id === id) || null;
+  }
+
+  async saveTrip(trip: Trip): Promise<Trip> {
+    if (!supabase) throw new StorageError('Supabase no está disponible.');
+    const userId = await this.getUserId();
+
+    // 1. Upsert trip
+    const { data: savedTripData, error: tripErr } = await supabase
+      .from('trips')
+      .upsert(
+        {
+          id: trip.id.includes('-') && trip.id.length === 36 ? trip.id : undefined,
+          user_id: userId,
+          name: trip.name,
+          destination: trip.destination,
+          description: trip.summary || '',
+          start_date: trip.startDate,
+          end_date: trip.endDate,
+          travelers_count: trip.travelers.adults + trip.travelers.children,
+          budget_amount: trip.budgetTotal,
+          budget_currency: trip.currency,
+          travel_style: trip.pace,
+          status: trip.status,
+          cover_image_url: trip.coverImage,
+        },
+        { onConflict: 'id' }
+      )
+      .select()
+      .single();
+
+    if (tripErr) throw new StorageError(`Error al guardar viaje en Supabase: ${tripErr.message}`);
+    const actualTripId = savedTripData.id;
+
+    // 2. Synchronize days
+    for (const day of trip.days) {
+      const { data: savedDayData, error: dayErr } = await supabase
+        .from('trip_days')
+        .upsert(
+          {
+            id: day.id.length === 36 ? day.id : undefined,
+            trip_id: actualTripId,
+            day_number: day.dayNumber,
+            date: day.date,
+            city: day.city,
+            notes: day.theme || null,
+          },
+          { onConflict: 'trip_id,day_number' }
+        )
+        .select()
+        .single();
+
+      if (dayErr) {
+        console.warn('Error saving day:', dayErr);
+        continue;
+      }
+
+      const actualDayId = savedDayData.id;
+
+      // 3. Synchronize activities for this day
+      for (let idx = 0; idx < day.activities.length; idx++) {
+        const act = day.activities[idx];
+        await supabase.from('activities').upsert(
+          {
+            id: act.id.length === 36 ? act.id : undefined,
+            trip_day_id: actualDayId,
+            name: act.name,
+            description: act.description,
+            category: act.category,
+            start_time: act.startTime,
+            end_time: act.endTime,
+            duration_minutes: act.durationMinutes,
+            location_name: act.location,
+            latitude: act.latitude,
+            longitude: act.longitude,
+            estimated_cost: act.estimatedCost,
+            currency: act.currency,
+            notes: act.notes || null,
+            status: act.completed ? 'completed' : 'pending',
+            sort_order: idx,
+          },
+          { onConflict: 'id' }
+        );
+      }
+    }
+
+    // 4. Upsert expenses
+    for (const exp of trip.expenses) {
+      await supabase.from('expenses').upsert(
+        {
+          id: exp.id.length === 36 ? exp.id : undefined,
+          trip_id: actualTripId,
+          category: exp.category,
+          description: exp.description,
+          amount: exp.amount,
+          currency: exp.currency,
+          date: exp.date,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    // 5. Upsert checklist
+    for (let idx = 0; idx < trip.checklist.length; idx++) {
+      const chk = trip.checklist[idx];
+      await supabase.from('checklist_items').upsert(
+        {
+          id: chk.id.length === 36 ? chk.id : undefined,
+          trip_id: actualTripId,
+          title: chk.title,
+          category: chk.category,
+          completed: chk.completed,
+          sort_order: idx,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    // 6. Upsert memories
+    for (const mem of trip.memories) {
+      await supabase.from('memories').upsert(
+        {
+          id: mem.id.length === 36 ? mem.id : undefined,
+          trip_id: actualTripId,
+          title: mem.title,
+          description: mem.note,
+          image_url: mem.imageUrl || null,
+          date: mem.date,
+          location: mem.location,
+        },
+        { onConflict: 'id' }
+      );
+    }
+
+    return { ...trip, id: actualTripId, userId };
+  }
+
+  async deleteTrip(id: string): Promise<boolean> {
+    if (!supabase) return false;
+    const { error } = await supabase.from('trips').delete().eq('id', id);
+    return !error;
+  }
+
+  async duplicateTrip(id: string): Promise<Trip | null> {
+    const original = await this.getTripById(id);
+    if (!original) return null;
+
+    const duplicated: Trip = {
+      ...original,
+      id: crypto.randomUUID ? crypto.randomUUID() : `trip-${Date.now()}`,
+      name: `${original.name} (Copia)`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      days: original.days.map((d, dIdx) => ({
+        ...d,
+        id: crypto.randomUUID ? crypto.randomUUID() : `day-${Date.now()}-${dIdx}`,
+        activities: d.activities.map((a, aIdx) => ({
+          ...a,
+          id: crypto.randomUUID ? crypto.randomUUID() : `act-${Date.now()}-${dIdx}-${aIdx}`,
+          completed: false,
+        })),
+      })),
+      memories: [],
+    };
+
+    return this.saveTrip(duplicated);
+  }
+
+  async getActiveTripId(): Promise<string | null> {
+    try {
+      const active = localStorage.getItem('itinera_active_trip_id_v1');
+      if (active) return active;
+      const trips = await this.getTrips();
+      if (trips.length > 0) return trips[0].id;
+    } catch {}
+    return null;
+  }
+
+  async setActiveTripId(id: string): Promise<void> {
+    try {
+      localStorage.setItem('itinera_active_trip_id_v1', id);
+    } catch {}
+  }
+
+  async getUserPreferences(): Promise<UserPreferences> {
+    const defaultPrefs: UserPreferences = {
+      gastronomy: 8,
+      nature: 7,
+      history: 9,
+      relax: 6,
+      adventure: 5,
+      culture: 8,
+      preferredCurrency: '€',
+      language: 'es',
+    };
+
+    if (!supabase) return defaultPrefs;
+    try {
+      const userId = await this.getUserId();
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (data?.travel_style) {
+        return {
+          ...defaultPrefs,
+          ...data.travel_style,
+          preferredCurrency: data.preferred_currency || '€',
+        };
+      }
+    } catch {}
+
+    return defaultPrefs;
+  }
+
+  async saveUserPreferences(prefs: UserPreferences): Promise<UserPreferences> {
+    if (!supabase) return prefs;
+    try {
+      const userId = await this.getUserId();
+      await supabase.from('user_preferences').upsert(
+        {
+          user_id: userId,
+          travel_style: {
+            gastronomy: prefs.gastronomy,
+            nature: prefs.nature,
+            history: prefs.history,
+            relax: prefs.relax,
+            adventure: prefs.adventure,
+            culture: prefs.culture,
+          },
+          preferred_currency: prefs.preferredCurrency,
+        },
+        { onConflict: 'user_id' }
+      );
+    } catch (e) {
+      console.warn('Error saving user preferences to Supabase:', e);
+    }
+    return prefs;
+  }
+
+  async resetToDemo(): Promise<Trip[]> {
+    // In Supabase mode, resetting to demo leaves cloud data intact or provisions the demo
+    return this.getTrips();
+  }
+}

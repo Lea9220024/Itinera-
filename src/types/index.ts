@@ -41,6 +41,7 @@ export interface Activity {
   notes?: string;
   completed?: boolean;
   distanceFromPreviousKm?: number;
+  sortOrder?: number;
 }
 
 export interface DayPlan {
@@ -118,6 +119,7 @@ export interface UserPreferences {
 
 export interface Trip {
   id: string;
+  userId?: string; // Authenticated user owner in Supabase
   name: string;
   destination: string;
   destinationsList: string[]; // e.g. ['Roma', 'Florencia', 'Venecia', 'Milán']
@@ -143,18 +145,34 @@ export interface Trip {
   updatedAt: string;
 }
 
+// -------------------------------------------------------------
+// AI Structured Actions & Proposals
+// -------------------------------------------------------------
+export type AIActionType =
+  | 'NONE'
+  | 'ADD_ACTIVITY'
+  | 'MOVE_ACTIVITY'
+  | 'DELETE_ACTIVITY'
+  | 'UPDATE_ACTIVITY'
+  | 'ADD_DAY'
+  | 'REMOVE_DAY'
+  | 'OPTIMIZE_DAY'
+  | 'UPDATE_BUDGET';
+
 export interface AIActionProposal {
   id: string;
   title: string;
   description: string;
-  type: 'move_activity' | 'add_activity' | 'remove_activity' | 'change_pace' | 'optimize_day';
+  type: AIActionType;
   payload: {
+    tripId?: string;
     activityId?: string;
     sourceDayId?: string;
     targetDayId?: string;
     targetTime?: string;
     newActivity?: Partial<Activity>;
     newPace?: TravelPace;
+    newBudget?: number;
   };
 }
 
@@ -164,4 +182,161 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   proposal?: AIActionProposal;
+}
+
+// -------------------------------------------------------------
+// Auth Models
+// -------------------------------------------------------------
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+}
+
+// -------------------------------------------------------------
+// Database Representation Types (matching Supabase Schema)
+// -------------------------------------------------------------
+export interface DbProfile {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbTrip {
+  id: string;
+  user_id: string;
+  name: string;
+  destination: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  travelers_count: number;
+  budget_amount: number;
+  budget_currency: string;
+  travel_style: string;
+  status: string;
+  cover_image_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbTripDay {
+  id: string;
+  trip_id: string;
+  day_number: number;
+  date: string;
+  city: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbActivity {
+  id: string;
+  trip_day_id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  location_name: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  estimated_cost: number;
+  currency: string;
+  notes: string | null;
+  status: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbExpense {
+  id: string;
+  trip_id: string;
+  category: string;
+  description: string;
+  amount: number;
+  currency: string;
+  date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbChecklistItem {
+  id: string;
+  trip_id: string;
+  title: string;
+  category: string;
+  completed: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMemory {
+  id: string;
+  trip_id: string;
+  title: string;
+  description: string | null;
+  image_url: string | null;
+  date: string;
+  location: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// -------------------------------------------------------------
+// Structured Optimizer Models
+// -------------------------------------------------------------
+export interface OptimizationScores {
+  logistics: number;
+  pacing: number;
+  budget: number;
+  distribution: number;
+  overall: number;
+}
+
+// -------------------------------------------------------------
+// App Errors Hierarchy
+// -------------------------------------------------------------
+export class AppError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+export class AuthError extends AppError {
+  constructor(message: string) {
+    super(message, 'AUTH_ERROR');
+    this.name = 'AuthError';
+  }
+}
+
+export class StorageError extends AppError {
+  constructor(message: string) {
+    super(message, 'STORAGE_ERROR');
+    this.name = 'StorageError';
+  }
+}
+
+export class AIError extends AppError {
+  constructor(message: string) {
+    super(message, 'AI_ERROR');
+    this.name = 'AIError';
+  }
+}
+
+export class ValidationError extends AppError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR');
+    this.name = 'ValidationError';
+  }
 }

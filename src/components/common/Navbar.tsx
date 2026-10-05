@@ -1,6 +1,8 @@
 import React from 'react';
-import { Compass, Moon, Sun, Sparkles, Plus, Plane } from 'lucide-react';
+import { Compass, Moon, Sun, Sparkles, Plus, Plane, User, LogOut } from 'lucide-react';
 import { Trip } from '../../types';
+import { NetworkStatusIndicator } from './NetworkStatusIndicator';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface NavbarProps {
   currentView: string;
@@ -10,6 +12,7 @@ interface NavbarProps {
   onToggleDarkMode: () => void;
   onOpenAIChat: () => void;
   onOpenWizard: () => void;
+  onOpenAuth: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,7 +22,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleDarkMode,
   onOpenAIChat,
   onOpenWizard,
+  onOpenAuth,
 }) => {
+  const { user, signOut, isConfigured } = useAuth();
+
   const navLinks = [
     { id: 'dashboard', label: 'Inicio' },
     { id: 'trips', label: 'Mis Viajes' },
@@ -82,6 +88,43 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Zone 3: Primary actions & toggles */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Online/Offline indicator */}
+          <NetworkStatusIndicator />
+
+          {/* User Auth indicator */}
+          {user ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onNavigate('profile')}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-stone-700 dark:text-stone-200 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+                title={`Conectado como ${user.email}`}
+              >
+                <div className="w-5 h-5 rounded-full bg-emerald-700 text-white flex items-center justify-center text-[10px]">
+                  {user.name?.slice(0, 1).toUpperCase() || 'U'}
+                </div>
+                <span className="hidden sm:inline truncate max-w-[90px]">{user.name || user.email.split('@')[0]}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="p-1.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 border border-stone-200 dark:border-stone-700 transition-colors"
+            >
+              <User className="w-3.5 h-3.5 text-stone-500" />
+              <span className="hidden sm:inline">Cuenta</span>
+            </button>
+          )}
+
           {/* Dark mode button */}
           <button
             type="button"
@@ -118,3 +161,4 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
+

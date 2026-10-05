@@ -106,26 +106,29 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
   const handleAcceptProposal = (proposal: AIActionProposal) => {
     setProposalStatus((prev) => ({ ...prev, [proposal.id]: 'accepted' }));
 
-    if (proposal.type === 'add_activity' && proposal.payload.newActivity) {
+    if (proposal.type === 'ADD_ACTIVITY' && proposal.payload.newActivity) {
+      const act = proposal.payload.newActivity;
+      const targetDayId = proposal.payload.targetDayId || trip.days[0]?.id || 'day-1';
+
       const newAct: Activity = {
         id: `act-ai-${Date.now()}`,
-        dayId: trip.days[0]?.id || 'day-1',
-        name: proposal.payload.newActivity.name || 'Nueva Actividad',
-        description: proposal.payload.newActivity.description || '',
-        category: proposal.payload.newActivity.category || 'culture',
-        startTime: proposal.payload.newActivity.startTime || '16:00',
-        endTime: proposal.payload.newActivity.endTime || '18:00',
-        durationMinutes: proposal.payload.newActivity.durationMinutes || 120,
-        location: proposal.payload.newActivity.location || trip.destination,
-        latitude: proposal.payload.newActivity.latitude || 41.8939,
-        longitude: proposal.payload.newActivity.longitude || 12.4931,
-        estimatedCost: proposal.payload.newActivity.estimatedCost || 0,
+        dayId: targetDayId,
+        name: act.name || 'Nueva Actividad',
+        description: act.description || '',
+        category: (act.category as any) || 'culture',
+        startTime: act.startTime || '16:00',
+        endTime: act.endTime || '18:00',
+        durationMinutes: act.durationMinutes || 120,
+        location: act.location || trip.destination,
+        latitude: act.latitude || 41.8939,
+        longitude: act.longitude || 12.4931,
+        estimatedCost: act.estimatedCost || 0,
         currency: trip.currency,
         completed: false,
       };
 
-      const updatedDays = trip.days.map((day, idx) => {
-        if (idx === 0) {
+      const updatedDays = trip.days.map((day) => {
+        if (day.id === targetDayId) {
           const updatedActs = [...day.activities, newAct].sort((a, b) =>
             a.startTime.localeCompare(b.startTime)
           );
@@ -135,8 +138,14 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
       });
 
       onUpdateTrip({ ...trip, days: updatedDays });
-    } else if (proposal.type === 'change_pace' && proposal.payload.newPace) {
-      onUpdateTrip({ ...trip, pace: proposal.payload.newPace });
+    } else if (proposal.type === 'UPDATE_BUDGET' && proposal.payload.newBudget) {
+      onUpdateTrip({ ...trip, budgetTotal: Number(proposal.payload.newBudget) });
+    } else if (proposal.type === 'DELETE_ACTIVITY' && proposal.payload.activityId) {
+      const updatedDays = trip.days.map((day) => ({
+        ...day,
+        activities: day.activities.filter((a) => a.id !== proposal.payload.activityId),
+      }));
+      onUpdateTrip({ ...trip, days: updatedDays });
     }
   };
 

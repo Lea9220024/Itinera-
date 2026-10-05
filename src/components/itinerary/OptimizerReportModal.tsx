@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Sparkles, CheckCircle, AlertTriangle, ArrowRight, Compass } from 'lucide-react';
+import { X, Sparkles, CheckCircle, AlertTriangle, ArrowRight, Compass, Lightbulb } from 'lucide-react';
 import { TripOptimizationReport, DayOptimizationResult } from '../../services/ItineraryOptimizer';
 
 interface OptimizerReportModalProps {
@@ -17,9 +17,11 @@ export const OptimizerReportModal: React.FC<OptimizerReportModalProps> = ({
 }) => {
   if (!isOpen || !report) return null;
 
+  const { scores } = report;
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-      <div className="relative w-full max-w-xl bg-white dark:bg-[#111918] rounded-2xl sm:rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="relative w-full max-w-xl bg-white dark:bg-[#111918] rounded-2xl sm:rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden flex flex-col max-h-[88vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 dark:border-stone-800 bg-emerald-50/50 dark:bg-emerald-950/20">
           <div className="flex items-center gap-2.5">
@@ -31,7 +33,7 @@ export const OptimizerReportModal: React.FC<OptimizerReportModalProps> = ({
                 Diagnóstico de ItineraryOptimizer
               </h3>
               <span className="text-xs text-stone-500 dark:text-stone-400">
-                Análisis geoespacial y cálculo de tiempos
+                Análisis geoespacial, temporal y presupuestario
               </span>
             </div>
           </div>
@@ -45,35 +47,78 @@ export const OptimizerReportModal: React.FC<OptimizerReportModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6 overflow-y-auto">
-          {/* Score banner */}
-          <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-800 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-stone-500 dark:text-stone-400 uppercase font-semibold tracking-wider">
-                Puntuación de Eficiencia
-              </span>
-              <p className="text-sm text-stone-700 dark:text-stone-300 mt-1 max-w-sm">
-                {report.summary}
-              </p>
+          {/* Main Score & Explanatory Sub-scores */}
+          <div className="p-5 rounded-2xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs text-stone-500 dark:text-stone-400 uppercase font-semibold tracking-wider">
+                  Score General
+                </span>
+                <p className="text-xs sm:text-sm text-stone-700 dark:text-stone-300 mt-0.5 max-w-sm">
+                  {report.summary}
+                </p>
+              </div>
+              <div className="text-right">
+                <span
+                  className={`text-3xl sm:text-4xl font-extrabold font-mono ${
+                    scores.overall >= 80
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : scores.overall >= 65
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {scores.overall}/100
+                </span>
+              </div>
             </div>
-            <div className="text-right">
-              <span
-                className={`text-3xl font-extrabold font-mono ${
-                  report.score >= 80
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : report.score >= 60
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {report.score}/100
-              </span>
+
+            {/* Sub-Scores Breakdown */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-stone-200/80 dark:border-stone-800">
+              <div className="p-2.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60 text-center">
+                <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium">Logística</span>
+                <span className="text-sm font-bold font-mono text-stone-900 dark:text-stone-100">{scores.logistics}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60 text-center">
+                <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium">Ritmo</span>
+                <span className="text-sm font-bold font-mono text-stone-900 dark:text-stone-100">{scores.pacing}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60 text-center">
+                <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium">Presupuesto</span>
+                <span className="text-sm font-bold font-mono text-stone-900 dark:text-stone-100">{scores.budget}</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60 text-center">
+                <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium">Distribución</span>
+                <span className="text-sm font-bold font-mono text-stone-900 dark:text-stone-100">{scores.distribution}</span>
+              </div>
             </div>
           </div>
+
+          {/* Suggestions if any */}
+          {report.suggestions.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                <span>Recomendaciones del Motor</span>
+              </h4>
+              <div className="space-y-2">
+                {report.suggestions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200"
+                  >
+                    <span className="font-bold block mb-0.5">{s.title}</span>
+                    <span className="text-stone-600 dark:text-stone-400">{s.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Days breakdown */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">
-              Análisis por jornadas
+              Análisis detallado por jornadas
             </h4>
 
             {report.daysAnalysis.map((day) => (
@@ -111,7 +156,7 @@ export const OptimizerReportModal: React.FC<OptimizerReportModalProps> = ({
                 ) : (
                   <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 pt-1">
                     <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Recorrido geográficamente óptimo sin fricciones.</span>
+                    <span>Recorrido geográficamente armónico sin fricciones.</span>
                   </div>
                 )}
               </div>
