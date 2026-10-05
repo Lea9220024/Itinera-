@@ -75,3 +75,25 @@ Lógica de Dominio en React ──► Repositorio IStorageService ──► Supa
 - **Row Level Security:** Conservado al 100% en las 9 tablas de PostgreSQL bajo `auth.uid() = user_id`.
 
 La Fase 2.1 queda completamente auditada, corregida, blindada y lista para la Fase 3.
+
+
+## Fase 2.2 — Hardening aplicado el 2026-10-05
+
+Correcciones aplicadas directamente sobre el repositorio:
+- AIService eliminado como ruta de fallback hacia /api/ai-assistant.
+- server.ts conserva únicamente host Vite/SPA; ya no expone un endpoint Gemini.
+- Edge Function exige Bearer JWT, valida usuario mediante Supabase Auth, valida input/output con Zod y restringe CORS mediante APP_URLS.
+- Se reforzó el prompt contra instrucciones contenidas en datos del viaje.
+- MigrationService ahora utiliza un mapa local→cloud, versión 2.1.0 y verifica conteos de días, actividades, gastos, checklist y recuerdos antes de marcar éxito.
+- SupabaseStorageService propaga errores de entidades y reconcilia correctamente colecciones vacías.
+- Se añadieron buckets privados trip-covers, memory-images y avatars con políticas de ownership.
+- main.tsx utiliza exclusivamente import.meta.env.PROD para registrar el Service Worker.
+- AIActionValidator ahora valida payloads de UPDATE_ACTIVITY, ADD_DAY, REMOVE_DAY y OPTIMIZE_DAY.
+
+### Estado posterior
+- IA: unificada en Edge Function + fallback local.
+- Auth Edge: obligatorio para IA.
+- Migración: verificable e idempotente a nivel de viaje mediante mapa de IDs; LocalStorage no se elimina ante fallo.
+- Storage: buckets/policies añadidos como migración.
+- PWA: registro frontend corregido.
+- Pendiente de verificación externa: ejecución real de npm typecheck/lint/test/build y pruebas contra un proyecto Supabase desplegado.
